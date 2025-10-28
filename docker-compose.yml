@@ -10,6 +10,9 @@ services:
     volumes:
       - ./nginx.conf.template:/etc/nginx/templates/nginx.conf.template:ro
       - ./routes.conf:/etc/nginx/routes.conf:ro
+    environment:
+      - PROXY_PROTOCOL_PARAM=${PROXY_PROTOCOL_PARAM:-off}
+      - NGINX_ENVSUBST_OUTPUT_DIR=/etc/nginx
     restart: unless-stopped
     networks:
       - proxy_network
