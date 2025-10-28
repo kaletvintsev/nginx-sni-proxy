@@ -1,157 +1,166 @@
 # Nginx SSL Proxy with Docker
 
-Простой SSL proxy с маршрутизацией по SNI. Чистый nginx без дополнительных скриптов.
+Простой и надежный SSL прокси-сервер с маршрутизацией по SNI на базе чистого Nginx. Никаких дополнительных скриптов — только конфигурационные файлы.
 
-## Структура проекта
+## Возможности
 
-```
-.
-├── docker-compose.yml     # Docker конфигурация
-├── nginx.conf.template    # Шаблон конфига nginx (с переменными окружения)
-├── routes.conf            # ⭐ МАРШРУТЫ домен→IP (файл нужно создать и сконфигурировать)
-└── README.md              # Эта инструкция
-```
+✅ Единый файл с маршрутами (домен → IP)  
+✅ SSL passthrough без расшифровки трафика  
+✅ Поддержка Let's Encrypt (ACME challenge)  
+✅ Автоматический редирект HTTP → HTTPS  
+✅ Простое добавление и удаление доменов  
+✅ Передача реального IP клиента (PROXY Protocol)  
+✅ Автоматический перезапуск при сбоях
 
 ## Быстрый старт
 
-### 1. Создайте и настройте маршруты
-Создайте `routes.conf`:
-```bash
-touch routes.conf
-```
+### 1. Настройте маршруты
 
-Откройте и добавьте ваши маршруты:
+Создайте и отредактируйте файл `routes.conf`:
 ```nginx
-# Формат: домен IP_сервера;
-your-domain.com          192.168.1.100;
-another-domain.com       192.168.1.200;
-
-default                  192.168.1.100;
+# Формат: домен IP_адрес_backend;
+example.com          192.168.1.100;
+api.example.com      192.168.1.101;
+shop.example.com     192.168.1.102;
 ```
 
-### 2. Запустите
+### 2. Запустите контейнер
+
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
 
-## Управление
+Готово! Прокси запущен и работает на портах 80 (HTTP) и 443 (HTTPS).
 
-### Добавить/изменить домен
-1. Отредактируйте `routes.conf`
-2. Перезагрузите nginx:
-```bash
-docker-compose exec nginx-proxy nginx -s reload
-```
-
-### Или перезапустите контейнер:
-```bash
-docker-compose restart nginx-proxy
-```
+## Основные команды
 
 ### Просмотр логов
 ```bash
-docker-compose logs -f nginx-proxy
+docker compose logs -f nginx-proxy
+```
+
+### Добавление или изменение домена
+
+1. Отредактируйте `routes.conf`
+2. Примените изменения без остановки:
+```bash
+docker compose exec nginx-proxy nginx -s reload
 ```
 
 ### Проверка конфигурации
 ```bash
-docker-compose exec nginx-proxy nginx -t
+docker compose exec nginx-proxy nginx -t
 ```
 
-### Остановка
+### Перезапуск контейнера
 ```bash
-docker-compose down
+docker compose restart nginx-proxy
+```
+
+### Остановка прокси
+```bash
+docker compose down
 ```
 
 ## Как это работает
 
-- **routes.conf** - единственный файл с маршрутами (домен → IP)
-- Nginx читает его через `include` в двух местах:
-  - `map $ssl_preread_server_name` - для HTTPS (порт 443)
-  - `map $host` - для HTTP (порт 80)
-- Трафик проксируется на указанный IP с добавлением порта (:443 или :80)
+Прокси маршрутизирует трафик на основе доменного имени:
 
-## Порты
+1. **routes.conf** содержит простую таблицу маршрутизации: домен → IP backend-сервера
+2. Nginx использует этот файл дважды:
+   - Для **HTTPS** (порт 443): читает SNI из SSL handshake через `ssl_preread`
+   - Для **HTTP** (порт 80): использует заголовок `Host`
+3. Трафик проксируется на указанный IP с соответствующим портом (443 или 80)
 
-- **80** - HTTP (ACME challenge + redirect to HTTPS)
-- **443** - HTTPS (SSL passthrough по SNI)
+### Порты
 
-## Особенности
+- **80** — HTTP (обработка ACME challenge и редирект на HTTPS)
+- **443** — HTTPS (SSL passthrough с сохранением шифрования)
 
-✅ Один файл маршрутов (`routes.conf`)  
-✅ Чистый nginx, никаких скриптов  
-✅ SSL passthrough без расшифровки  
-✅ Поддержка Let's Encrypt (ACME challenge)  
-✅ Автоматический редирект HTTP → HTTPS  
-✅ Легко добавлять/удалять домены  
-✅ Опциональная передача реального IP клиента (PROXY Protocol)
+### Структура проекта
 
----
+```
+.
+├── docker-compose.yml     # Конфигурация Docker
+├── nginx.conf.template    # Шаблон Nginx с переменными окружения
+├── routes.conf            # ⭐ Файл маршрутизации (домен → IP)
+└── README.md              # Документация
+```
 
-## Передача реального IP клиента на backend-серверы
+## Передача реального IP клиента
 
-По умолчанию backend-серверы видят IP прокси-сервера вместо реального IP клиента.
+По умолчанию backend-серверы видят IP прокси, а не реальный IP клиента.
 
-### HTTP трафик (порт 80)
+### HTTP-трафик (порт 80)
 
-**Уже настроено!** Прокси автоматически добавляет HTTP заголовки:
-- `X-Real-IP` - реальный IP клиента
-- `X-Forwarded-For` - цепочка прокси-серверов
-- `X-Forwarded-Proto` - протокол (http/https)
+**Уже настроено!** Прокси автоматически добавляет заголовки:
+- `X-Real-IP` — реальный IP клиента
+- `X-Forwarded-For` — цепочка прокси
+- `X-Forwarded-Proto` — протокол (http/https)
 
-Ваш backend просто читает эти заголовки из запроса.
+Backend просто читает эти заголовки из входящего запроса.
 
-### HTTPS трафик (порт 443) - PROXY Protocol
+### HTTPS-трафик (порт 443)
 
-Для SSL passthrough нужен **PROXY Protocol**, так как трафик зашифрован и HTTP заголовки добавить невозможно.
+Для зашифрованного трафика используется **PROXY Protocol** — специальный протокол передачи метаданных клиента перед SSL handshake.
 
-#### Что такое PROXY Protocol?
 
-Протокол передает информацию о клиенте в начале TCP соединения (до SSL handshake):
+### PROXY Protocol
+
+PROXY Protocol передает информацию о клиенте в начале TCP-соединения (до SSL handshake):
+
 ```
 PROXY TCP4 1.2.3.4 10.0.0.1 54321 443\r\n
-<далее идет SSL/TLS трафик>
+<далее следует SSL/TLS трафик>
 ```
 
-#### Как включить PROXY Protocol
+#### Включение PROXY Protocol
 
-**Шаг 1:** Включите PROXY Protocol через переменную `PROXY_PROTOCOL_PARAM=on`
+**Шаг 1: Включите на прокси-сервере**
 
+Создайте файл `.env` рядом с `docker-compose.yml`:
+```bash
+PROXY_PROTOCOL_PARAM=on
+```
 
-**Шаг 2:** Настройте backend-серверы на прием PROXY Protocol (Ваших приложений на который будете перенаправлять трафик)
+Или установите переменную при запуске:
+```bash
+PROXY_PROTOCOL_PARAM=on docker compose up -d
+```
 
-**⚠️ КРИТИЧЕСКИ ВАЖНО!** Без настройки backend сайты **перестанут работать**!
+**⚠️ ВНИМАНИЕ:** Без настройки backend-серверов сайты **перестанут работать**!
 
-#### Настройка Nginx на backend:
+**Шаг 2: Настройте backend-серверы**
+
+#### Nginx на backend
 
 ```nginx
 server {
-    listen 443 ssl proxy_protocol;  # ← добавьте proxy_protocol
+    listen 443 ssl proxy_protocol;  # добавьте proxy_protocol
     
     ssl_certificate /path/to/cert.pem;
     ssl_certificate_key /path/to/key.pem;
     
-    # Доверяем прокси-серверам (укажите IP вашего прокси)
+    # Доверяем IP прокси-сервера
     set_real_ip_from 172.16.0.0/12;  # Docker networks
-    set_real_ip_from 192.168.0.0/16; # Локальные сети
-    set_real_ip_from 10.0.0.0/8;     # Или конкретный IP прокси
+    set_real_ip_from 192.168.0.0/16; # Private networks
+    set_real_ip_from 10.0.0.0/8;
     real_ip_header proxy_protocol;
     
     location / {
-        # Теперь $remote_addr содержит реальный IP клиента
-        access_log /var/log/nginx/access.log;
+        # $remote_addr теперь содержит реальный IP клиента
+        proxy_pass http://upstream;
     }
 }
 ```
 
-#### Настройка Apache на backend:
+#### Apache на backend
 
 ```apache
 <VirtualHost *:443>
-    # Включаем PROXY Protocol (требуется mod_remoteip)
+    # Требуется mod_remoteip
     RemoteIPProxyProtocol On
     
-    # Доверяем прокси-серверам
     RemoteIPInternalProxy 172.16.0.0/12
     RemoteIPInternalProxy 192.168.0.0/16
     RemoteIPInternalProxy 10.0.0.0/8
@@ -160,12 +169,11 @@ server {
     SSLCertificateFile /path/to/cert.pem
     SSLCertificateKeyFile /path/to/key.pem
     
-    # Теперь REMOTE_ADDR содержит реальный IP
-    CustomLog ${APACHE_LOG_DIR}/access.log combined
+    # REMOTE_ADDR теперь содержит реальный IP
 </VirtualHost>
 ```
 
-#### Настройка Caddy на backend:
+#### Caddy на backend
 
 ```caddy
 {
@@ -179,13 +187,19 @@ server {
     }
 }
 
-your-domain.com {
+example.com {
     tls /path/to/cert.pem /path/to/key.pem
-    
-    # Реальный IP доступен автоматически
-    log {
-        output file /var/log/caddy/access.log
-    }
+    reverse_proxy upstream:8080
 }
 ```
+
+**Шаг 3: Перезапустите прокси**
+
+```bash
+docker compose down
+docker compose up -d
+docker compose logs -f nginx-proxy
+```
+
+В логах должна появиться информация об успешном старте Nginx.
 
