@@ -21,7 +21,7 @@ stream {
         proxy_connect_timeout 5s;
         proxy_timeout 300s;
 
-        proxy_protocol ${PROXY_PROTOCOL_PARAM:-off};
+        proxy_protocol ${PROXY_PROTOCOL_PARAM};
     }
 }
 
